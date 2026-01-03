@@ -42,7 +42,10 @@ jobs:
           DATE=$(date +%Y%m%d)
           
           # Get existing releases for today to determine build number
-          EXISTING=$(gh release list --limit 100 | grep "^${DATE}-" | wc -l || echo "0")
+          # Handle empty output and whitespace from wc
+          EXISTING=$(gh release list --limit 100 2>/dev/null | grep -c "^${DATE}-" || true)
+          EXISTING=${EXISTING:-0}
+          EXISTING=$(echo "$EXISTING" | tr -d '[:space:]')
           BUILD_NUM=$(printf "%02d" $((EXISTING + 1)))
           
           VERSION="${DATE}-${BUILD_NUM}"
@@ -86,7 +89,10 @@ jobs:
           DATE=$(date +%Y%m%d)
           
           # Get existing releases for today to determine build number
-          EXISTING=$(gh release list --limit 100 | grep "^${DATE}-" | wc -l || echo "0")
+          # Handle empty output and whitespace from wc
+          EXISTING=$(gh release list --limit 100 2>/dev/null | grep -c "^${DATE}-" || true)
+          EXISTING=${EXISTING:-0}
+          EXISTING=$(echo "$EXISTING" | tr -d '[:space:]')
           BUILD_NUM=$(printf "%02d" $((EXISTING + 1)))
           
           VERSION="${DATE}-${BUILD_NUM}"
