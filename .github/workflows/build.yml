@@ -1,0 +1,125 @@
+name: Build and Release
+
+on:
+  push:
+    branches: ['*']
+  pull_request:
+    branches: ['*']
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Generate version for release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        id: version
+        shell: bash
+        run: |
+          # Get today's date in YYYYMMDD format
+          DATE=$(date +%Y%m%d)
+          
+          # Get existing releases for today to determine build number
+          EXISTING=$(gh release list --limit 100 | grep "^${DATE}-" | wc -l || echo "0")
+          BUILD_NUM=$(printf "%02d" $((EXISTING + 1)))
+          
+          VERSION="${DATE}-${BUILD_NUM}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Generated version: ${VERSION}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (Release)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: cargo build --release
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Build (Dev)
+        if: github.ref != 'refs/heads/main' || github.event_name != 'push'
+        run: cargo build --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kakaotalk_adblock-${{ github.sha }}
+          path: target/release/kakaotalk_adblock.exe
+          retention-days: 30
+
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate version
+        id: version
+        run: |
+          # Get today's date in YYYYMMDD format
+          DATE=$(date +%Y%m%d)
+          
+          # Get existing releases for today to determine build number
+          EXISTING=$(gh release list --limit 100 | grep "^${DATE}-" | wc -l || echo "0")
+          BUILD_NUM=$(printf "%02d" $((EXISTING + 1)))
+          
+          VERSION="${DATE}-${BUILD_NUM}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Generated version: ${VERSION}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: kakaotalk_adblock-${{ github.sha }}
+          path: ./release
+
+      - name: Rename binary
+        run: |
+          mv ./release/kakaotalk_adblock.exe ./release/KakaoTalkAdBlock-${{ steps.version.outputs.version }}.exe
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
+          body: |
+            ## KakaoTalk AdBlock ${{ steps.version.outputs.version }}
+            
+            ### Download
+            - `KakaoTalkAdBlock-${{ steps.version.outputs.version }}.exe` - Windows executable
+            
+            ### Changes
+            - Auto-generated release from main branch
+            - Commit: ${{ github.sha }}
+          files: |
+            ./release/KakaoTalkAdBlock-${{ steps.version.outputs.version }}.exe
+          draft: false
+          prerelease: false
